@@ -1,0 +1,174 @@
+input = getDirectory("Choose folder for starting images");
+File.setDefaultDir(input);
+output=getDirectory("Choose output folder");
+list = getFileList(input);
+list = Array.sort(list);
+var indvthreshold, noise, areapercent, scale, minsize, maxsize, name, noise, count, axonlength, axonflag, name, newname;
+var string, j, d, sum, indexstring, indexnum, tvalue, Label2Array, resultlist, FolderCreate, foldername, FO, findex, LabelArray, CS, nindex, length, axonlength;
+
+//Channel/Scale/Thresholding parameters
+//Individual and auto processes thresholding within the macro.
+//Set Value allows to set a global value to all images, while From .csv references individual values in a .csv file
+Dialog.create("Experiment Info");
+		Dialog.addNumber("Pixel Scale:", 0.10049847,8,8,"(um/pixel)");
+		Dialog.addNumber("How many starting channels?",4,0,1,"channel/s");
+		Dialog.addString("Name Index", ".tif");
+		Dialog.show();
+	scale = Dialog.getNumber();
+	numChan = Dialog.getNumber();
+	nameindex = Dialog.getString();
+
+	channel= newArray("C1","C2","C3","C4");
+	chan=Array.trim(channel, numChan);
+
+//Assigning which channel will be the one for initial thresholding (determine ROI) and the channel that will be measured using said ROI
+options = newArray("Manual","Auto","Set Value", "From .csv");
+options2 = newArray("Manual","Auto","Set Value", "From .csv","None");
+Dialog.create("Channel Assignment");
+		Dialog.addChoice("Channel for Thresholding", chan);
+		Dialog.addChoice("Channel to Measure", chan);
+		Dialog.addChoice("Primary Thresholding", options);
+		Dialog.addChoice("Secondary Thresholding", options2);
+		Dialog.show();
+		
+	tchan=Dialog.getChoice();
+	mchan=Dialog.getChoice();
+	tvalue = Dialog.getChoice();
+	mvalue = Dialog.getChoice();
+
+//Generating output folders
+zipfile = output+"ROIs";
+File.makeDirectory(zipfile);
+
+//Loading .csv with individual file thresholding		
+if ((tvalue== "From .csv"||mvalue == "From .csv")==1){
+	path2 = File.openDialog("Select a .csv of threshold measurements");
+    	Table.open(path2);
+ 		Table.rename(Table.title, "Threshold");
+ 		Label2Array=newArray();
+		Label2Array=Table.getColumn("File");
+}
+if (tvalue == "Set Value") {
+Dialog.create("Set Thresholding");
+Dialog.addNumber(tchan+" Threshold",0);
+		Dialog.show();
+settval=Dialog.getNumber();
+}
+if (mvalue == "Set Value") {
+Dialog.create("Set Thresholding");
+Dialog.addNumber(mchan+" Threshold",0);
+		Dialog.show();
+setmval=Dialog.getNumber();
+}
+
+run("Set Measurements...", "area mean perimeter integrated area_fraction limit display redirect=None decimal=5");
+
+for(f=0;f<list.length;f++)
+{
+open(input+list[f]);
+x=0;
+y=0;
+a=65535;
+	title=getTitle();
+	endindex=indexOf(title, nameindex);
+	newtitle=substring(list[f],0,endindex);
+  	
+selectImage(title);
+run("Split Channels");
+
+
+selectWindow(tchan+"-"+title);
+roiManager("reset");
+getDimensions(width, height, channels, slices, frames);
+run("Properties...", "channels=1 slices=1 frames=1 unit=um pixel_width="+scale+" pixel_height="+scale+" voxel_depth=1");
+resetThreshold;
+run("Grays");
+setAutoThreshold("Default dark 16-bit no-reset");
+run("Threshold...");
+if(tvalue == "Manual"){
+run("Threshold...");
+run("In [+]");
+run("In [+]");
+run("In [+]");
+run("In [+]");
+waitForUser("set and record threshold");
+			}
+if(tvalue == "Set"){
+  		x=settval;
+  	}
+  	
+if (tvalue == "From .csv"){
+  	for (i = 0; i < lengthOf(Label2Array); i++) {
+        if (startsWith(Label2Array[i],newtitle)) {
+        selectWindow("Threshold");
+        x=Table.get(tchan, i);
+        }
+  	}
+  	}
+getThreshold(x,a);
+setThreshold(x, 65535);
+run("Create Selection");
+roiManager("Add");
+roiManager("Select", 0);
+roiManager("Rename", title+" "+tchan+" "+x);
+roiManager("save", zipfile+File.separator+newtitle+tchan+" T"+x+"_ROI.zip")
+
+
+//mchan int den within tchan ROI)
+selectWindow(mchan+"-"+title);
+rename(mchan+"-"+newtitle+ " Raw in ROI");
+roiManager("select", 0);
+roiManager("Measure");
+//ROI channel measurement unsing additional thresholding
+if(mvalue != "None"){
+resetThreshold;
+run("Grays");
+setAutoThreshold("Default dark");
+run("Threshold...");
+if(mvalue == "Manual"){
+run("Threshold...");
+run("In [+]");
+run("In [+]");
+run("In [+]");
+run("In [+]");
+waitForUser("set and record threshold");
+			}
+if(mvalue == "Set Value"){
+y=setmval;
+}
+
+if (mvalue == "From .csv"){
+  	for (i = 0; i < lengthOf(Label2Array); i++) {
+        if (startsWith(Label2Array[i],newtitle)) {
+        selectWindow("Threshold");
+        y=Table.get(mchan, i);
+        }
+  	}
+  	}
+rename(mchan+"-"+title + " Thresholded");
+getThreshold(y,a);
+setThreshold(y, 65535);
+run("Create Selection");
+roiManager("Add");
+roiManager("deselect");
+roiManager("Select", 1);
+roiManager("Rename", title+" "+mchan+" "+y);
+roiManager("Measure");
+//Thresholded mchan intden in tchan ROI
+rename(mchan+"-"+title + "Thresholded in ROI");
+roiManager("deselect");
+roiManager("Select", 0);
+roiManager("Measure");
+roiManager("save", zipfile+File.separator+newtitle+"_ROI.zip")
+}
+close("*");
+roiManager("reset");
+}
+roiManager("reset");
+selectWindow("Results");
+getDateAndTime(year, month, dayOfWeek, dayOfMonth, hour, minute, second, msec);
+newmonth=month+1;
+print(year+"-"+newmonth+"-"+dayOfMonth);
+saveAs("Results",output+File.separator+year+"-"+newmonth+"-"+dayOfMonth+" Results.csv");
+
+
